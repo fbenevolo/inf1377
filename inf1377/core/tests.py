@@ -11,8 +11,15 @@ class CadastroTests(TestCase):
         response = self.client.get(reverse("core:home"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Encontre conexões que fazem sentido")
-        self.assertContains(response, "Criar Conta Para Empresa")
-        self.assertContains(response, "Criar Conta Para Candidato")
+        self.assertContains(response, reverse("core:cadastro"))
+
+    def test_escolhe_tipo_de_conta_antes_do_cadastro(self):
+        response = self.client.get(reverse("core:cadastro"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Sou candidato")
+        self.assertContains(response, reverse("core:cadastro-candidato"))
+        self.assertContains(response, "Sou empresa")
+        self.assertContains(response, reverse("core:cadastro-empresa"))
 
     def test_cadastra_candidato_com_senha_protegida(self):
         response = self.client.post(reverse("core:cadastro-candidato"), {

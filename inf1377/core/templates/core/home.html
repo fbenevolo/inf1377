@@ -37,12 +37,13 @@
         <a class="brand" href="{% url 'core:home' %}">Linketinder</a>
         <div>
           {% if request.session.conta_id %}
+            {% if request.session.nome_conta %}<span>Bem-vindo(a), {{ request.session.nome_conta }}!</span>{% endif %}
             <a href="{% url 'core:perfil' %}">Meu Perfil</a>
             <a href="{% url 'core:vagas' %}">Vagas</a>
             <a class="nav-button" href="{% url 'core:logout' %}">Logout</a>
           {% else %}
             <a href="{% url 'core:login' %}">Entrar</a>
-            <a class="nav-button" href="{% url 'core:cadastro-empresa' %}">Criar Conta</a>
+            <a class="nav-button" href="{% url 'core:cadastro' %}">Criar Conta</a>
           {% endif %}
         </div>
       </nav>
@@ -56,8 +57,7 @@
           </div>
         {% else %}
           <div class="actions">
-            <a class="button button-primary" href="{% url 'core:cadastro-empresa' %}">Criar Conta Para Empresa</a>
-            <a class="button button-secondary" href="{% url 'core:cadastro-candidato' %}">Criar Conta Para Candidato</a>
+            <a class="button button-primary" href="{% url 'core:cadastro' %}">Criar Conta</a>
           </div>
         {% endif %}
       </section>

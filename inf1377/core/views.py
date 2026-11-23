@@ -20,6 +20,10 @@ def home(request):
     return render(request, "core/home.html")
 
 
+def cadastro_escolha(request):
+    return render(request, "core/cadastro_escolha.html")
+
+
 def conta_autenticada(view):
     @wraps(view)
     def wrapper(request, *args, **kwargs):
@@ -40,6 +44,7 @@ def login_view(request):
         conta = form.cleaned_data["conta"]
         request.session["conta_id"] = conta.pk
         request.session["tipo_conta"] = form.cleaned_data["tipo_conta"]
+        request.session["nome_conta"] = conta.nome
         return redirect("core:perfil")
     return render(request, "core/login.html", {"form": form})
 

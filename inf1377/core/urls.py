@@ -4,6 +4,7 @@ from .views import (
     CadastroCandidatoView,
     CadastroEmpresaView,
     home,
+    cadastro_escolha,
     login_view,
     logout_view,
     perfil,
@@ -14,6 +15,7 @@ app_name = "core"
 
 urlpatterns = [
     path("", home, name="home"),
+    path("cadastro/", cadastro_escolha, name="cadastro"),
     path("login/", login_view, name="login"),
     path("logout/", logout_view, name="logout"),
     path("perfil/", perfil, name="perfil"),

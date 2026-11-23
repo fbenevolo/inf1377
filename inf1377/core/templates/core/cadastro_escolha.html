@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Escolha seu cadastro | Linketinder</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; padding: 36px 24px; color: #172033; background: #f5f7fb; font: 16px Arial, sans-serif; }
+      main { width: min(100%, 900px); margin: auto; }
+      .brand { color: #1d4ed8; text-decoration: none; font-weight: bold; }
+      h1 { margin: 22px 0 8px; color: #172554; text-align: center; }
+      .intro { margin: 0 0 32px; color: #64748b; text-align: center; line-height: 1.5; }
+      .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+      .choice { display: block; min-height: 220px; padding: 28px; color: inherit; text-decoration: none; background: white; border: 2px solid #e2e8f0; border-radius: 16px; box-shadow: 0 12px 35px #17255414; transition: border-color .2s, transform .2s, box-shadow .2s; }
+      .choice:hover, .choice:focus-visible { border-color: #2563eb; transform: translateY(-3px); box-shadow: 0 16px 35px #17255424; }
+      .choice:focus-visible { outline: 3px solid #bfdbfe; outline-offset: 3px; }
+      .choice h2 { margin: 0 0 12px; color: #1d4ed8; }
+      .choice p { margin: 0 0 22px; color: #475569; line-height: 1.6; }
+      .action { color: #1d4ed8; font-weight: bold; }
+      .back { display: block; margin-top: 26px; color: #1d4ed8; text-align: center; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="brand" href="{% url 'core:home' %}">Linketinder</a>
+      <h1>Que tipo de conta você quer criar?</h1>
+      <p class="intro">Escolha a opção que melhor descreve você para continuar com o cadastro correto.</p>
+      <section class="choices" aria-label="Tipo de conta">
+        <a class="choice" href="{% url 'core:cadastro-candidato' %}">
+          <h2>Sou candidato</h2>
+          <p>Crie seu perfil profissional, apresente suas competências e encontre oportunidades de trabalho.</p>
+          <span class="action">Criar conta de candidato →</span>
+        </a>
+        <a class="choice" href="{% url 'core:cadastro-empresa' %}">
+          <h2>Sou empresa</h2>
+          <p>Apresente sua empresa, divulgue oportunidades e encontre profissionais alinhados às suas vagas.</p>
+          <span class="action">Criar conta de empresa →</span>
+        </a>
+      </section>
+      <a class="back" href="{% url 'core:home' %}">Voltar para a página inicial</a>
+    </main>
+  </body>
+</html>
