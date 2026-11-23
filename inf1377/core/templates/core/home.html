@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Linketinder | Conectando talentos</title>
+    <style>
+      :root { font-family: Arial, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; color: #172033; background: #f5f7fb; }
+      header { color: white; background: #172554; }
+      nav, .hero, .content { max-width: 1080px; margin: auto; padding-left: 24px; padding-right: 24px; }
+      nav { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+      .brand { color: white; text-decoration: none; font-size: 1.35rem; font-weight: bold; }
+      nav div { display: flex; gap: 18px; align-items: center; }
+      nav a { color: white; text-decoration: none; }
+      .nav-button { border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 16px; }
+      .hero { padding-top: 82px; padding-bottom: 76px; }
+      .hero h1 { max-width: 680px; margin: 0 0 18px; font-size: clamp(2.2rem, 5vw, 4rem); line-height: 1.05; }
+      .hero p { max-width: 650px; margin: 0 0 30px; color: #dbeafe; font-size: 1.15rem; line-height: 1.6; }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+      .button { display: inline-block; padding: 13px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; }
+      .button-primary { color: #172554; background: white; }
+      .button-secondary { color: white; border: 1px solid #93c5fd; }
+      .content { padding-top: 42px; padding-bottom: 58px; }
+      .content h2 { margin-top: 0; text-align: center; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-top: 26px; }
+      .card { padding: 24px; background: white; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 5px 18px #1725540d; }
+      .card h3 { margin-top: 0; color: #1d4ed8; }
+      .card p { line-height: 1.55; color: #475569; }
+      footer { padding: 22px 24px; color: #64748b; text-align: center; border-top: 1px solid #e2e8f0; background: white; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav aria-label="Navegação principal">
+        <a class="brand" href="{% url 'core:home' %}">Linketinder</a>
+        <div>
+          {% if request.session.conta_id %}
+            <a href="{% url 'core:perfil' %}">Meu Perfil</a>
+            <a href="{% url 'core:vagas' %}">Vagas</a>
+            <a class="nav-button" href="{% url 'core:logout' %}">Logout</a>
+          {% else %}
+            <a href="{% url 'core:login' %}">Entrar</a>
+            <a class="nav-button" href="{% url 'core:cadastro-empresa' %}">Criar Conta</a>
+          {% endif %}
+        </div>
+      </nav>
+      <section class="hero">
+        <h1>Encontre conexões que fazem sentido.</h1>
+        <p>O Linketinder aproxima talentos e empresas por meio de competências, oportunidades e matches profissionais.</p>
+        {% if request.session.conta_id %}
+          <div class="actions">
+            <a class="button button-primary" href="{% url 'core:perfil' %}">Meu Perfil</a>
+            <a class="button button-secondary" href="{% url 'core:vagas' %}">Ver Vagas</a>
+          </div>
+        {% else %}
+          <div class="actions">
+            <a class="button button-primary" href="{% url 'core:cadastro-empresa' %}">Criar Conta Para Empresa</a>
+            <a class="button button-secondary" href="{% url 'core:cadastro-candidato' %}">Criar Conta Para Candidato</a>
+          </div>
+        {% endif %}
+      </section>
+    </header>
+    <main class="content">
+      <h2>Como o Linketinder funciona</h2>
+      <div class="cards">
+        <article class="card"><h3>Crie seu perfil</h3><p>Apresente suas competências ou divulgue as oportunidades da sua empresa.</p></article>
+        <article class="card"><h3>Descubra oportunidades</h3><p>Encontre vagas e talentos alinhados às suas necessidades profissionais.</p></article>
+        <article class="card"><h3>Conecte-se</h3><p>Quando houver interesse dos dois lados, um match abre espaço para conversar.</p></article>
+      </div>
+    </main>
+    <footer>Linketinder — conectando pessoas e oportunidades.</footer>
+  </body>
+</html>
