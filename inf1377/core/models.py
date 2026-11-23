@@ -117,6 +117,33 @@ class Swipe(models.Model):
         return f"{self.candidato} - {self.vaga}: {self.get_direcao_display()}"
 
 
+class SwipeEmpresa(models.Model):
+    candidato = models.ForeignKey(
+        Candidato,
+        on_delete=models.CASCADE,
+        related_name="swipes_empresa",
+    )
+    empresa = models.ForeignKey(
+        Empresa,
+        on_delete=models.CASCADE,
+        related_name="swipes",
+    )
+    direcao = models.CharField(max_length=7, choices=Swipe.Direcao.choices)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["candidato", "empresa"],
+                name="unique_swipe_por_candidato_e_empresa",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.candidato} - {self.empresa}: {self.get_direcao_display()}"
+
+
 class Match(models.Model):
     candidato = models.ForeignKey(
         Candidato,

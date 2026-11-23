@@ -13,7 +13,7 @@ from .forms import (
     EmpresaCadastroForm,
     EmpresaPerfilForm,
 )
-from .models import Candidato, Empresa
+from .models import Candidato, Empresa, Swipe, SwipeEmpresa
 
 
 def home(request):
@@ -35,7 +35,25 @@ def conta_autenticada(view):
 
 @conta_autenticada
 def vagas(request):
-    return render(request, "core/vagas.html")
+    if request.session.get("tipo_conta") != "candidato":
+        return render(request, "core/vagas.html", {"somente_candidato": True})
+
+    candidato_id = request.session["conta_id"]
+    if request.method == "POST":
+        direcao = request.POST.get("direcao")
+        empresa = Empresa.objects.filter(pk=request.POST.get("empresa_id")).first()
+        if empresa and direcao in Swipe.Direcao.values:
+            SwipeEmpresa.objects.update_or_create(
+                candidato_id=candidato_id,
+                empresa=empresa,
+                defaults={"direcao": direcao},
+            )
+        return redirect("core:vagas")
+
+    empresa = (
+        Empresa.objects.exclude(swipes__candidato_id=candidato_id).order_by("nome").first()
+    )
+    return render(request, "core/vagas.html", {"empresa": empresa})
 
 
 def login_view(request):
@@ -45,7 +63,7 @@ def login_view(request):
         request.session["conta_id"] = conta.pk
         request.session["tipo_conta"] = form.cleaned_data["tipo_conta"]
         request.session["nome_conta"] = conta.nome
-        return redirect("core:perfil")
+        return redirect("core:home")
     return render(request, "core/login.html", {"form": form})
 
 
