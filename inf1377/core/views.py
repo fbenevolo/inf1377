@@ -4,6 +4,7 @@ from django.contrib.auth.hashers import make_password
 from django.contrib.auth import logout
 from django.shortcuts import render
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.views.generic.edit import FormView
 
 from .forms import (
@@ -13,7 +14,7 @@ from .forms import (
     EmpresaCadastroForm,
     EmpresaPerfilForm,
 )
-from .models import Candidato, Empresa, Swipe, SwipeEmpresa
+from .models import Candidato, Empresa, Swipe, SwipeEmpresa, Vaga
 
 
 def home(request):
@@ -35,7 +36,53 @@ def conta_autenticada(view):
 
 @conta_autenticada
 def vagas(request):
-    if request.session.get("tipo_conta") != "candidato":
+    tipo_conta = request.session.get("tipo_conta")
+    if tipo_conta == "empresa":
+        vagas_empresa = Vaga.objects.filter(
+            empresa_id=request.session["conta_id"],
+        ).order_by("nome")
+        if request.method == "POST":
+            vaga = vagas_empresa.filter(pk=request.POST.get("vaga_id")).first()
+            candidato = Candidato.objects.filter(
+                pk=request.POST.get("candidato_id"),
+            ).first()
+            direcao = request.POST.get("direcao")
+            if vaga and candidato and direcao in Swipe.Direcao.values:
+                SwipeEmpresa.objects.update_or_create(
+                    candidato=candidato,
+                    vaga=vaga,
+                    defaults={
+                        "empresa_id": request.session["conta_id"],
+                        "direcao": direcao,
+                    },
+                )
+                return redirect(f"{reverse('core:vagas')}?vaga_id={vaga.pk}")
+            return redirect("core:vagas")
+
+        vaga_id = request.GET.get("vaga_id")
+        vaga = vagas_empresa.filter(pk=vaga_id).first() if vaga_id else None
+        if vaga is None:
+            vaga = vagas_empresa.first()
+
+        candidato = None
+        if vaga:
+            candidato = (
+                Candidato.objects.exclude(swipes_empresa__vaga_id=vaga.pk)
+                .order_by("nome")
+                .first()
+            )
+        return render(
+            request,
+            "core/vagas.html",
+            {
+                "tipo_conta": tipo_conta,
+                "vagas": vagas_empresa,
+                "vaga": vaga,
+                "candidato": candidato,
+            },
+        )
+
+    if tipo_conta != "candidato":
         return render(request, "core/vagas.html", {"somente_candidato": True})
 
     candidato_id = request.session["conta_id"]
@@ -51,9 +98,20 @@ def vagas(request):
         return redirect("core:vagas")
 
     empresa = (
-        Empresa.objects.exclude(swipes__candidato_id=candidato_id).order_by("nome").first()
+        Empresa.objects.exclude(
+            pk__in=SwipeEmpresa.objects.filter(
+                candidato_id=candidato_id,
+                vaga__isnull=True,
+            ).values("empresa_id")
+        )
+        .order_by("nome")
+        .first()
     )
-    return render(request, "core/vagas.html", {"empresa": empresa})
+    return render(
+        request,
+        "core/vagas.html",
+        {"tipo_conta": tipo_conta, "empresa": empresa},
+    )
 
 
 def login_view(request):

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Vagas | Linketinder</title>
+    <title>{% if request.session.tipo_conta == "empresa" %}Avaliar candidatos{% else %}Vagas{% endif %} | Linketinder</title>
     <style>
       :root { font-family: Arial, sans-serif; }
       body { margin: 0; color: #172033; background: #f5f7fb; }
@@ -26,6 +26,46 @@
     <main>
       {% if somente_candidato %}
         <p>A área de vagas com swipe está disponível apenas para candidatos.</p>
+      {% elif tipo_conta == "empresa" %}
+        {% if vagas %}
+          <form method="get">
+            <label for="vaga">Escolha a vaga para avaliar candidatos</label>
+            <select id="vaga" name="vaga_id" onchange="this.form.submit()">
+              {% for item in vagas %}
+                <option value="{{ item.pk }}" {% if vaga.pk == item.pk %}selected{% endif %}>{{ item.nome }}</option>
+              {% endfor %}
+            </select>
+          </form>
+          {% if candidato %}
+            <div class="card" id="card">
+              <div class="imagem">Perfil do candidato</div>
+              <div class="info">
+                <h2>{{ candidato.nome }}</h2>
+                <p>{{ candidato.estado }} · {{ candidato.cep }}</p>
+                <p>{{ candidato.descricao|default:"Este candidato ainda não adicionou um resumo profissional." }}</p>
+                {% if candidato.competencias.exists %}
+                  <p>Competências:
+                    {% for competencia in candidato.competencias.all %}
+                      {{ competencia.nome }}{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                  </p>
+                {% endif %}
+              </div>
+            </div>
+            <form method="post" class="acoes" id="form-swipe">
+              {% csrf_token %}
+              <input type="hidden" name="vaga_id" value="{{ vaga.pk }}">
+              <input type="hidden" name="candidato_id" value="{{ candidato.pk }}">
+              <input type="hidden" name="direcao" id="direcao" disabled>
+              <button class="deslike" type="submit" name="direcao" value="recusar" aria-label="Deslike" title="Deslike">&#10005;</button>
+              <button class="like" type="submit" name="direcao" value="curtir" aria-label="Like" title="Like">&#10084;</button>
+            </form>
+          {% else %}
+            <p>Não há novos candidatos para esta vaga.</p>
+          {% endif %}
+        {% else %}
+          <p>Cadastre uma vaga antes de avaliar candidatos.</p>
+        {% endif %}
       {% elif empresa %}
         <div class="card" id="card">
           <div class="imagem">Sem imagem</div>
@@ -41,9 +81,14 @@
           <button class="deslike" type="submit" name="direcao" value="recusar" aria-label="Deslike" title="Deslike">&#10005;</button>
           <button class="like" type="submit" name="direcao" value="curtir" aria-label="Like" title="Like">&#10084;</button>
         </form>
+      {% else %}
+        <p>Você já avaliou todas as empresas disponíveis. Volte mais tarde!</p>
+      {% endif %}
+    </main>
         <script>
           (function () {
             var card = document.getElementById("card");
+            if (!card) return;
             var form = document.getElementById("form-swipe");
             var campo = document.getElementById("direcao");
             var limite = 120, inicioX = null, dx = 0;
@@ -78,9 +123,5 @@
             card.addEventListener("pointercancel", soltar);
           })();
         </script>
-      {% else %}
-        <p>Você já avaliou todas as empresas disponíveis. Volte mais tarde!</p>
-      {% endif %}
-    </main>
   </body>
 </html>

@@ -128,6 +128,13 @@ class SwipeEmpresa(models.Model):
         on_delete=models.CASCADE,
         related_name="swipes",
     )
+    vaga = models.ForeignKey(
+        Vaga,
+        on_delete=models.CASCADE,
+        related_name="swipes_empresa",
+        null=True,
+        blank=True,
+    )
     direcao = models.CharField(max_length=7, choices=Swipe.Direcao.choices)
     criado_em = models.DateTimeField(auto_now_add=True)
 
@@ -136,7 +143,12 @@ class SwipeEmpresa(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["candidato", "empresa"],
-                name="unique_swipe_por_candidato_e_empresa",
+                condition=models.Q(vaga__isnull=True),
+                name="unique_swipe_candidato_empresa",
+            ),
+            models.UniqueConstraint(
+                fields=["candidato", "vaga"],
+                name="unique_swipe_empresa_por_candidato_e_vaga",
             )
         ]
 
