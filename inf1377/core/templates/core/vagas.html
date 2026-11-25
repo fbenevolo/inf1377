@@ -24,19 +24,22 @@
   <body>
     <header><a href="{% url 'core:home' %}">&larr; Linketinder</a></header>
     <main>
+      {% include "core/matches.html" %}
       {% if somente_candidato %}
         <p>A área de vagas com swipe está disponível apenas para candidatos.</p>
       {% elif tipo_conta == "empresa" %}
         {% if vagas %}
           <form method="get">
-            <label for="vaga">Escolha a vaga para avaliar candidatos</label>
+            <label for="vaga">Escolha como avaliar candidatos</label>
             <select id="vaga" name="vaga_id" onchange="this.form.submit()">
+              <option value="" {% if not vaga %}selected{% endif %}>Empresa (avaliação geral)</option>
               {% for item in vagas %}
                 <option value="{{ item.pk }}" {% if vaga.pk == item.pk %}selected{% endif %}>{{ item.nome }}</option>
               {% endfor %}
             </select>
           </form>
-          {% if candidato %}
+        {% endif %}
+        {% if candidato %}
             <div class="card" id="card">
               <div class="imagem">Perfil do candidato</div>
               <div class="info">
@@ -54,17 +57,16 @@
             </div>
             <form method="post" class="acoes" id="form-swipe">
               {% csrf_token %}
-              <input type="hidden" name="vaga_id" value="{{ vaga.pk }}">
+              {% if vaga %}<input type="hidden" name="vaga_id" value="{{ vaga.pk }}">{% endif %}
               <input type="hidden" name="candidato_id" value="{{ candidato.pk }}">
               <input type="hidden" name="direcao" id="direcao" disabled>
               <button class="deslike" type="submit" name="direcao" value="recusar" aria-label="Deslike" title="Deslike">&#10005;</button>
               <button class="like" type="submit" name="direcao" value="curtir" aria-label="Like" title="Like">&#10084;</button>
             </form>
-          {% else %}
+        {% elif vaga %}
             <p>Não há novos candidatos para esta vaga.</p>
-          {% endif %}
         {% else %}
-          <p>Cadastre uma vaga antes de avaliar candidatos.</p>
+          <p>Não há novos candidatos para sua empresa.</p>
         {% endif %}
       {% elif empresa %}
         <div class="card" id="card">

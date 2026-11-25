@@ -2,6 +2,7 @@ from functools import wraps
 
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import logout
+from django.db import transaction
 from django.shortcuts import render
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -14,11 +15,55 @@ from .forms import (
     EmpresaCadastroForm,
     EmpresaPerfilForm,
 )
-from .models import Candidato, Empresa, Swipe, SwipeEmpresa, Vaga
+from .models import (
+    AvaliacaoCandidato, Candidato, Empresa, MatchEmpresa, Swipe, SwipeEmpresa, Vaga,
+)
+
+
+def _criar_match_se_mutuo(candidato_id, empresa_id):
+    curtida_candidato = SwipeEmpresa.objects.filter(
+        candidato_id=candidato_id, empresa_id=empresa_id, vaga__isnull=True,
+        direcao=Swipe.Direcao.CURTIR,
+    ).exists()
+    curtida_empresa = AvaliacaoCandidato.objects.filter(
+        candidato_id=candidato_id, empresa_id=empresa_id,
+        direcao=Swipe.Direcao.CURTIR,
+    ).exists() or SwipeEmpresa.objects.filter(
+        candidato_id=candidato_id, empresa_id=empresa_id, vaga__isnull=False,
+        direcao=Swipe.Direcao.CURTIR,
+    ).exists()
+    if curtida_candidato and curtida_empresa:
+        MatchEmpresa.objects.get_or_create(
+            candidato_id=candidato_id, empresa_id=empresa_id,
+        )
+
+
+def _render_com_matches(request, template, context=None):
+    context = dict(context or {})
+    conta_id = request.session.get("conta_id")
+    tipo_conta = request.session.get("tipo_conta")
+    if not conta_id or tipo_conta not in ("candidato", "empresa"):
+        return render(request, template, context)
+    if tipo_conta == "candidato":
+        pendentes = MatchEmpresa.objects.filter(
+            candidato_id=conta_id, candidato_notificado=False,
+        )
+        campo = "candidato_notificado"
+    else:
+        pendentes = MatchEmpresa.objects.filter(
+            empresa_id=conta_id, empresa_notificada=False,
+        )
+        campo = "empresa_notificada"
+    with transaction.atomic():
+        matches = list(pendentes.select_for_update().select_related("candidato", "empresa"))
+        context["matches_novos"] = matches
+        response = render(request, template, context)
+        MatchEmpresa.objects.filter(pk__in=[match.pk for match in matches]).update(**{campo: True})
+    return response
 
 
 def home(request):
-    return render(request, "core/home.html")
+    return _render_com_matches(request, "core/home.html")
 
 
 def cadastro_escolha(request):
@@ -42,36 +87,49 @@ def vagas(request):
             empresa_id=request.session["conta_id"],
         ).order_by("nome")
         if request.method == "POST":
-            vaga = vagas_empresa.filter(pk=request.POST.get("vaga_id")).first()
+            vaga_id = request.POST.get("vaga_id")
+            vaga = vagas_empresa.filter(pk=vaga_id).first() if vaga_id else None
             candidato = Candidato.objects.filter(
                 pk=request.POST.get("candidato_id"),
             ).first()
             direcao = request.POST.get("direcao")
-            if vaga and candidato and direcao in Swipe.Direcao.values:
-                SwipeEmpresa.objects.update_or_create(
-                    candidato=candidato,
-                    vaga=vaga,
-                    defaults={
-                        "empresa_id": request.session["conta_id"],
-                        "direcao": direcao,
-                    },
-                )
-                return redirect(f"{reverse('core:vagas')}?vaga_id={vaga.pk}")
+            if candidato and direcao in Swipe.Direcao.values:
+                if vaga or not vaga_id:
+                    empresa_id = request.session["conta_id"]
+                    with transaction.atomic():
+                        Empresa.objects.select_for_update().get(pk=empresa_id)
+                        if vaga:
+                            SwipeEmpresa.objects.update_or_create(
+                                candidato=candidato,
+                                vaga=vaga,
+                                defaults={"empresa_id": empresa_id, "direcao": direcao},
+                            )
+                        else:
+                            AvaliacaoCandidato.objects.update_or_create(
+                                candidato=candidato,
+                                empresa_id=empresa_id,
+                                defaults={"direcao": direcao},
+                            )
+                        if direcao == Swipe.Direcao.CURTIR:
+                            _criar_match_se_mutuo(candidato.pk, empresa_id)
+                    if vaga:
+                        return redirect(f"{reverse('core:vagas')}?vaga_id={vaga.pk}")
             return redirect("core:vagas")
 
         vaga_id = request.GET.get("vaga_id")
         vaga = vagas_empresa.filter(pk=vaga_id).first() if vaga_id else None
-        if vaga is None:
-            vaga = vagas_empresa.first()
-
-        candidato = None
         if vaga:
-            candidato = (
-                Candidato.objects.exclude(swipes_empresa__vaga_id=vaga.pk)
-                .order_by("nome")
-                .first()
-            )
-        return render(
+            avaliados = SwipeEmpresa.objects.filter(vaga=vaga).values("candidato_id")
+        else:
+            avaliados = AvaliacaoCandidato.objects.filter(
+                empresa_id=request.session["conta_id"],
+            ).values("candidato_id")
+        candidato = (
+            Candidato.objects.exclude(pk__in=avaliados)
+            .order_by("nome")
+            .first()
+        )
+        return _render_com_matches(
             request,
             "core/vagas.html",
             {
@@ -90,11 +148,16 @@ def vagas(request):
         direcao = request.POST.get("direcao")
         empresa = Empresa.objects.filter(pk=request.POST.get("empresa_id")).first()
         if empresa and direcao in Swipe.Direcao.values:
-            SwipeEmpresa.objects.update_or_create(
-                candidato_id=candidato_id,
-                empresa=empresa,
-                defaults={"direcao": direcao},
-            )
+            with transaction.atomic():
+                Empresa.objects.select_for_update().get(pk=empresa.pk)
+                SwipeEmpresa.objects.update_or_create(
+                    candidato_id=candidato_id,
+                    empresa=empresa,
+                    vaga=None,
+                    defaults={"direcao": direcao},
+                )
+                if direcao == Swipe.Direcao.CURTIR:
+                    _criar_match_se_mutuo(candidato_id, empresa.pk)
         return redirect("core:vagas")
 
     empresa = (
@@ -107,10 +170,12 @@ def vagas(request):
         .order_by("nome")
         .first()
     )
-    return render(
+    return _render_com_matches(
         request,
         "core/vagas.html",
-        {"tipo_conta": tipo_conta, "empresa": empresa},
+        {
+            "tipo_conta": tipo_conta, "empresa": empresa,
+        },
     )
 
 
