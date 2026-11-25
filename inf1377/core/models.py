@@ -1,5 +1,6 @@
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import models, transaction
+from django.db.models import OuterRef, Subquery
 
 
 class Competencia(models.Model):
@@ -57,25 +58,72 @@ class Empresa(models.Model):
         return self.nome
 
 
+class StatusVaga(models.TextChoices):
+    PUBLICADA = "publicada", "Publicada"
+    PAUSADA = "pausada", "Pausada"
+    ENCERRADA = "encerrada", "Encerrada"
+
+
+# Transições permitidas (RN3: vaga encerrada não é reativada).
+TRANSICOES_STATUS_VAGA = {
+    StatusVaga.PUBLICADA: {StatusVaga.PAUSADA, StatusVaga.ENCERRADA},
+    StatusVaga.PAUSADA: {StatusVaga.PUBLICADA, StatusVaga.ENCERRADA},
+    StatusVaga.ENCERRADA: set(),
+}
+
+
+class VagaQuerySet(models.QuerySet):
+    def com_status(self):
+        """Anota `status_atual` com o registro mais recente do histórico."""
+        mais_recente = HistoricoStatusVaga.objects.filter(
+            vaga=OuterRef("pk"),
+        ).order_by("-data_alteracao", "-id")
+        return self.annotate(status_anotado=Subquery(mais_recente.values("status")[:1]))
+
+    def publicadas(self):
+        return self.com_status().filter(status_anotado=StatusVaga.PUBLICADA)
+
+
 class Vaga(models.Model):
+    class Modalidade(models.TextChoices):
+        REMOTO = "remoto", "Remoto"
+        HIBRIDO = "hibrido", "Híbrido"
+        PRESENCIAL = "presencial", "Presencial"
+
     empresa = models.ForeignKey(
         Empresa,
         on_delete=models.CASCADE,
         related_name="vagas",
     )
-    nome = models.CharField(max_length=150)
+    titulo = models.CharField(max_length=150)
     descricao = models.TextField()
+    salario = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    endereco = models.CharField(max_length=255, blank=True)
+    modalidade = models.CharField(
+        max_length=10,
+        choices=Modalidade.choices,
+        default=Modalidade.PRESENCIAL,
+    )
+    data_criacao = models.DateTimeField(auto_now_add=True)
     competencias = models.ManyToManyField(
         Competencia,
         related_name="vagas",
         blank=True,
     )
 
+    objects = VagaQuerySet.as_manager()
+
     class Meta:
-        ordering = ["empresa__nome", "nome"]
+        ordering = ["empresa__nome", "titulo"]
         constraints = [
             models.UniqueConstraint(
-                fields=["empresa", "nome"],
+                fields=["empresa", "titulo"],
                 name="unique_vaga_por_empresa",
             )
         ]
@@ -83,7 +131,54 @@ class Vaga(models.Model):
         verbose_name_plural = "vagas"
 
     def __str__(self):
-        return f"{self.nome} - {self.empresa.nome}"
+        return f"{self.titulo} - {self.empresa.nome}"
+
+    @classmethod
+    def criar(cls, empresa, **dados):
+        """Cria a vaga já publicada e registra o status no histórico (RN2)."""
+        with transaction.atomic():
+            vaga = cls.objects.create(empresa=empresa, **dados)
+            HistoricoStatusVaga.objects.create(vaga=vaga, status=StatusVaga.PUBLICADA)
+        return vaga
+
+    @property
+    def status_atual(self):
+        registro = self.historico_status.first()
+        return registro.status if registro else None
+
+    @property
+    def status_atual_display(self):
+        return StatusVaga(self.status_atual).label if self.status_atual else ""
+
+    def pode_ir_para(self, novo_status):
+        atual = self.status_atual
+        return atual is not None and novo_status in TRANSICOES_STATUS_VAGA[StatusVaga(atual)]
+
+    def alterar_status(self, novo_status):
+        with transaction.atomic():
+            if not self.pode_ir_para(novo_status):
+                raise ValueError(
+                    f"Transição inválida: {self.status_atual} -> {novo_status}."
+                )
+            return HistoricoStatusVaga.objects.create(vaga=self, status=novo_status)
+
+
+class HistoricoStatusVaga(models.Model):
+    vaga = models.ForeignKey(
+        Vaga,
+        on_delete=models.CASCADE,
+        related_name="historico_status",
+    )
+    status = models.CharField(max_length=10, choices=StatusVaga.choices)
+    data_alteracao = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-data_alteracao", "-id"]
+        verbose_name = "histórico de status da vaga"
+        verbose_name_plural = "histórico de status das vagas"
+
+    def __str__(self):
+        return f"{self.vaga}: {self.get_status_display()}"
 
 
 class Swipe(models.Model):

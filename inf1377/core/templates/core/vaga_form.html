@@ -1,0 +1,28 @@
+{% extends "core/base.html" %}
+{% block titulo %}{% if editando %}Editar vaga{% else %}Nova vaga{% endif %}{% endblock %}
+{% block estilos %}
+<style>
+  form.campos p { margin: 0 0 16px; }
+  form.campos label { display: block; font-weight: bold; margin-bottom: 4px; }
+  form.campos input, form.campos select, form.campos textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; }
+  .rodape { display: flex; gap: 12px; }
+</style>
+{% endblock %}
+{% block conteudo %}
+  <h1>{% if editando %}Editar vaga{% else %}Nova vaga{% endif %}</h1>
+  <form method="post" class="painel campos">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for campo in form %}
+      <p>
+        {{ campo.label_tag }}
+        {{ campo }}
+        {% for erro in campo.errors %}<span class="erro">{{ erro }}</span>{% endfor %}
+      </p>
+    {% endfor %}
+    <div class="rodape">
+      <button class="botao" type="submit">Salvar</button>
+      <a class="botao botao-secundario" href="{% url 'core:painel-vagas' %}">Cancelar</a>
+    </div>
+  </form>
+{% endblock %}

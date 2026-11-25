@@ -1,0 +1,14 @@
+{% extends "core/base.html" %}
+{% block titulo %}Encerrar vaga{% endblock %}
+{% block conteudo %}
+  <h1>Encerrar vaga</h1>
+  <div class="painel">
+    <p>Tem certeza de que deseja encerrar a vaga <strong>{{ vaga.titulo }}</strong>?</p>
+    <p>Ela deixará de aparecer para os candidatos e <strong>não poderá ser reativada</strong>. Os matches já existentes são mantidos.</p>
+    <form method="post" style="display:flex; gap:12px;">
+      {% csrf_token %}
+      <button class="botao botao-perigo" type="submit">Sim, encerrar</button>
+      <a class="botao botao-secundario" href="{% url 'core:painel-vagas' %}">Cancelar</a>
+    </form>
+  </div>
+{% endblock %}

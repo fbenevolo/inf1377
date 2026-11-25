@@ -14,7 +14,9 @@
       .imagem { height: 260px; background: #e2e8f0; display: flex; align-items: center; justify-content: center; color: #94a3b8; }
       .info { padding: 20px; text-align: left; }
       .info h2 { margin: 0 0 10px; }
-      .info p { margin: 0; color: #475569; line-height: 1.55; }
+      .info p { margin: 0 0 8px; color: #475569; line-height: 1.55; }
+      .info .empresa { color: #1d4ed8; font-weight: bold; }
+      .info .meta { font-size: .9rem; }
       .acoes { display: flex; justify-content: center; gap: 28px; margin-top: 24px; }
       .acoes button { width: 72px; height: 72px; border-radius: 50%; border: 0; font-size: 1.9rem; cursor: pointer; color: white; }
       .deslike { background: #ef4444; }
@@ -32,7 +34,7 @@
             <label for="vaga">Escolha a vaga para avaliar candidatos</label>
             <select id="vaga" name="vaga_id" onchange="this.form.submit()">
               {% for item in vagas %}
-                <option value="{{ item.pk }}" {% if vaga.pk == item.pk %}selected{% endif %}>{{ item.nome }}</option>
+                <option value="{{ item.pk }}" {% if vaga.pk == item.pk %}selected{% endif %}>{{ item.titulo }}</option>
               {% endfor %}
             </select>
           </form>
@@ -64,25 +66,26 @@
             <p>Não há novos candidatos para esta vaga.</p>
           {% endif %}
         {% else %}
-          <p>Cadastre uma vaga antes de avaliar candidatos.</p>
+          <p>Você não tem vagas publicadas. <a href="{% url 'core:painel-vagas' %}">Crie ou reative uma vaga</a> para avaliar candidatos.</p>
         {% endif %}
-      {% elif empresa %}
+      {% elif vaga %}
         <div class="card" id="card">
-          <div class="imagem">Sem imagem</div>
           <div class="info">
-            <h2>{{ empresa.nome }}</h2>
-            <p>{{ empresa.descricao|default:"Esta empresa ainda não adicionou uma descrição." }}</p>
+            <h2>{{ vaga.titulo }}</h2>
+            <p class="empresa">{{ vaga.empresa.nome }}</p>
+            <p class="meta">{{ vaga.get_modalidade_display }} · {% if vaga.salario %}R$ {{ vaga.salario|floatformat:2 }}{% else %}Salário a combinar{% endif %}{% if vaga.endereco %} · {{ vaga.endereco }}{% endif %}</p>
+            <p>{{ vaga.descricao|linebreaksbr }}</p>
           </div>
         </div>
         <form method="post" class="acoes" id="form-swipe">
           {% csrf_token %}
-          <input type="hidden" name="empresa_id" value="{{ empresa.pk }}">
+          <input type="hidden" name="vaga_id" value="{{ vaga.pk }}">
           <input type="hidden" name="direcao" id="direcao" disabled>
           <button class="deslike" type="submit" name="direcao" value="recusar" aria-label="Deslike" title="Deslike">&#10005;</button>
           <button class="like" type="submit" name="direcao" value="curtir" aria-label="Like" title="Like">&#10084;</button>
         </form>
       {% else %}
-        <p>Você já avaliou todas as empresas disponíveis. Volte mais tarde!</p>
+        <p>Sem novas vagas por enquanto.</p>
       {% endif %}
     </main>
         <script>

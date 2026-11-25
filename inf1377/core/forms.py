@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.hashers import check_password
 
-from .models import Candidato, Empresa
+from .models import Candidato, Empresa, Vaga
 
 
 class AutenticacaoForm(forms.Form):
@@ -94,3 +94,25 @@ class EmpresaPerfilForm(EmpresaCadastroForm):
             if senha != confirmar:
                 self.add_error("confirmar_senha", "As senhas não coincidem.")
         return cleaned_data
+
+
+class VagaForm(forms.ModelForm):
+    class Meta:
+        model = Vaga
+        fields = ["titulo", "descricao", "salario", "modalidade", "endereco"]
+        widgets = {"descricao": forms.Textarea(attrs={"rows": 5})}
+
+    def __init__(self, *args, empresa, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.empresa = empresa
+
+    def clean_titulo(self):
+        titulo = self.cleaned_data["titulo"].strip()
+        # `empresa` não é campo do form, então a UniqueConstraint não é validada
+        # automaticamente; checamos aqui para mostrar erro no campo.
+        duplicada = Vaga.objects.filter(empresa=self.empresa, titulo__iexact=titulo)
+        if self.instance.pk:
+            duplicada = duplicada.exclude(pk=self.instance.pk)
+        if duplicada.exists():
+            raise forms.ValidationError("Sua empresa já possui uma vaga com este título.")
+        return titulo
