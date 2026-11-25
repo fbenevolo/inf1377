@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Variáveis de ambiente (use .env.example como modelo)
+.env
+
+# Django
+*.sqlite3
+*.sqlite3-journal
+/inf1377/media/
+/inf1377/staticfiles/
+*.log
+
+# Testes / cobertura
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Editores e SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

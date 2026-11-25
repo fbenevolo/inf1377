@@ -59,7 +59,7 @@ class CadastroTests(TestCase):
         response = self.client.post(reverse("core:login"), {
             "email": candidato.email, "senha": "senha-segura",
         })
-        self.assertRedirects(response, reverse("core:perfil"))
+        self.assertRedirects(response, reverse("core:home"))
         response = self.client.post(reverse("core:perfil"), {
             "nome": "Ana Silva Atualizada", "email": candidato.email,
             "cpf": candidato.cpf, "idade": 29, "estado": "SP",
