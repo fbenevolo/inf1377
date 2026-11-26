@@ -251,6 +251,60 @@ class SwipeEmpresa(models.Model):
         return f"{self.candidato} - {self.empresa}: {self.get_direcao_display()}"
 
 
+class AvaliacaoCandidato(models.Model):
+    candidato = models.ForeignKey(
+        Candidato,
+        on_delete=models.CASCADE,
+        related_name="avaliacoes_empresas",
+    )
+    empresa = models.ForeignKey(
+        Empresa,
+        on_delete=models.CASCADE,
+        related_name="avaliacoes_candidatos",
+    )
+    direcao = models.CharField(max_length=7, choices=Swipe.Direcao.choices)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["candidato", "empresa"],
+                name="unique_avaliacao_candidato_empresa",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.empresa} - {self.candidato}: {self.get_direcao_display()}"
+
+
+class MatchEmpresa(models.Model):
+    candidato = models.ForeignKey(
+        Candidato,
+        on_delete=models.CASCADE,
+        related_name="matches_empresas",
+    )
+    empresa = models.ForeignKey(
+        Empresa,
+        on_delete=models.CASCADE,
+        related_name="matches_candidatos",
+    )
+    candidato_notificado = models.BooleanField(default=False)
+    empresa_notificada = models.BooleanField(default=False)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["candidato", "empresa"],
+                name="unique_match_candidato_empresa",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Match: {self.candidato} - {self.empresa}"
+
+
 class Match(models.Model):
     candidato = models.ForeignKey(
         Candidato,

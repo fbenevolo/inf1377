@@ -1,12 +1,19 @@
+from importlib import import_module
+from types import SimpleNamespace
+
+from django.apps import apps
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.hashers import make_password
+from django.db import connection
 from django.test import Client, TestCase
 from django.urls import reverse
 
 from .models import (
+    AvaliacaoCandidato,
     Candidato,
     Empresa,
     HistoricoStatusVaga,
+    MatchEmpresa,
     StatusVaga,
     Swipe,
     SwipeEmpresa,
@@ -111,6 +118,80 @@ class SwipeTests(TestCase):
         session["tipo_conta"] = "empresa"
         session["nome_conta"] = self.empresa.nome
         session.save()
+
+    def test_empresa_avalia_candidatos_sem_vaga_independentemente_do_candidato(self):
+        session = self.client.session
+        session["conta_id"] = self.candidato.pk
+        session["tipo_conta"] = "candidato"
+        session.save()
+        self.client.post(reverse("core:vagas"), {
+            "vaga_id": self.vaga.pk,
+            "direcao": "curtir",
+        })
+
+        self.autenticar_empresa()
+        response = self.client.get(reverse("core:vagas"))
+        self.assertContains(response, self.candidato.nome)
+        self.assertNotContains(response, "Cadastre uma vaga antes de avaliar candidatos.")
+
+        response = self.client.post(reverse("core:vagas"), {
+            "candidato_id": self.candidato.pk,
+            "direcao": "recusar",
+        })
+        self.assertRedirects(response, reverse("core:vagas"))
+        self.assertEqual(
+            AvaliacaoCandidato.objects.get(
+                candidato=self.candidato, empresa=self.empresa,
+            ).direcao,
+            "recusar",
+        )
+        self.assertContains(
+            self.client.get(reverse("core:vagas")),
+            "Não há novos candidatos para sua empresa.",
+        )
+
+        session = self.client.session
+        session["conta_id"] = self.candidato.pk
+        session["tipo_conta"] = "candidato"
+        session.save()
+        self.assertContains(
+            self.client.get(reverse("core:vagas")),
+            "Sem novas vagas por enquanto",
+        )
+        self.assertEqual(
+            Swipe.objects.get(candidato=self.candidato, vaga=self.vaga).direcao,
+            "curtir",
+        )
+
+    def test_avaliacao_geral_e_independente_de_vagas_e_de_outras_empresas(self):
+        self.autenticar_empresa()
+        self.assertContains(self.client.get(reverse("core:vagas")), self.candidato.nome)
+        self.client.post(reverse("core:vagas"), {
+            "candidato_id": self.candidato.pk,
+            "direcao": "curtir",
+        })
+        self.assertContains(
+            self.client.get(reverse("core:vagas"), {"vaga_id": self.vaga.pk}),
+            self.candidato.nome,
+        )
+
+        outra_empresa = Empresa.objects.create(
+            nome="Outra", email="outra@example.com", cnpj="98.765.432/0001-10",
+            pais="Brasil", senha=make_password("senha-segura"),
+        )
+        session = self.client.session
+        session["conta_id"] = outra_empresa.pk
+        session.save()
+        self.assertContains(self.client.get(reverse("core:vagas")), self.candidato.nome)
+
+    def test_avaliacao_geral_rejeita_direcao_invalida(self):
+        self.vaga.delete()
+        self.autenticar_empresa()
+        self.client.post(reverse("core:vagas"), {
+            "candidato_id": self.candidato.pk,
+            "direcao": "invalida",
+        })
+        self.assertContains(self.client.get(reverse("core:vagas")), self.candidato.nome)
 
     def test_empresa_pode_deslizar_candidatos_no_contexto_de_uma_vaga(self):
         self.autenticar_empresa()
@@ -379,3 +460,121 @@ class FeedVagasTests(BaseContaTests):
         response = self.client.get(reverse("core:vagas"))
         self.assertContains(response, "Dev Backend")
         self.assertNotContains(response, "Vaga pausada")
+
+
+class MatchEmpresaTests(TestCase):
+    def setUp(self):
+        self.empresa = Empresa.objects.create(
+            nome="Acme", email="contato@acme.com", cnpj="12345678000100",
+            pais="Brasil", senha=make_password("senha-segura"),
+        )
+        self.candidato = Candidato.objects.create(
+            nome="Ana Silva", email="ana@example.com", cpf="12345678900",
+            idade=28, estado="RJ", cep="20000000",
+            senha=make_password("senha-segura"),
+        )
+        self.vaga_da_empresa = Vaga.criar(
+            self.empresa, titulo="Backend", descricao="APIs",
+        )
+        self.empresa_client = Client()
+        self.candidato_client = Client()
+        for client, conta, tipo in (
+            (self.empresa_client, self.empresa, "empresa"),
+            (self.candidato_client, self.candidato, "candidato"),
+        ):
+            session = client.session
+            session["conta_id"] = conta.pk
+            session["tipo_conta"] = tipo
+            session.save()
+
+    def avaliar_candidato(self, direcao="curtir", vaga=None, follow=False):
+        dados = {"candidato_id": self.candidato.pk, "direcao": direcao}
+        if vaga:
+            dados["vaga_id"] = vaga.pk
+        return self.empresa_client.post(reverse("core:vagas"), dados, follow=follow)
+
+    def avaliar_empresa(self, direcao="curtir", follow=False, vaga=None):
+        """O candidato avalia a empresa ao deslizar uma vaga dela no feed."""
+        return self.candidato_client.post(reverse("core:vagas"), {
+            "vaga_id": (vaga or self.vaga_da_empresa).pk,
+            "direcao": direcao,
+        }, follow=follow)
+
+    def test_match_notifica_candidato_e_empresa_ao_entrar_novamente(self):
+        self.avaliar_candidato()
+        self.assertNotContains(self.empresa_client.get(reverse("core:home")), "Deu match!")
+        response = self.avaliar_empresa(follow=True)
+        self.assertContains(response, "Deu match!")
+        self.assertContains(response, self.empresa.nome)
+        self.assertNotContains(self.candidato_client.get(reverse("core:home")), "Deu match!")
+
+        self.empresa_client.get(reverse("core:logout"))
+        response = self.empresa_client.post(reverse("core:login"), {
+            "email": self.empresa.email, "senha": "senha-segura",
+        }, follow=True)
+        self.assertContains(response, "Deu match!")
+        self.assertContains(response, self.candidato.nome)
+        self.assertNotContains(self.empresa_client.get(reverse("core:home")), "Deu match!")
+
+        self.avaliar_empresa()
+        self.assertNotContains(self.candidato_client.get(reverse("core:vagas")), "Deu match!")
+        self.assertNotContains(self.empresa_client.get(reverse("core:home")), "Deu match!")
+        self.assertEqual(MatchEmpresa.objects.count(), 1)
+
+    def test_match_tambem_funciona_quando_candidato_curte_primeiro(self):
+        self.avaliar_empresa()
+        response = self.avaliar_candidato(follow=True)
+        self.assertContains(response, "Deu match!")
+        self.assertContains(response, self.candidato.nome)
+        response = self.candidato_client.get(reverse("core:home"))
+        self.assertContains(response, "Deu match!")
+        self.assertContains(response, self.empresa.nome)
+
+    def test_recusa_nao_gera_match(self):
+        self.avaliar_candidato(direcao="recusar")
+        response = self.avaliar_empresa(follow=True)
+        self.assertNotContains(response, "Deu match!")
+        self.assertNotContains(self.empresa_client.get(reverse("core:home")), "Deu match!")
+        self.assertFalse(MatchEmpresa.objects.exists())
+
+    def test_like_de_outra_empresa_nao_gera_match(self):
+        outra = Empresa.objects.create(
+            nome="Outra", email="outra@example.com", cnpj="98765432000100",
+            pais="Brasil", senha=make_password("senha-segura"),
+        )
+        vaga_da_outra = Vaga.criar(outra, titulo="Designer", descricao="Design")
+        self.avaliar_candidato()
+        response = self.avaliar_empresa(vaga=vaga_da_outra, follow=True)
+        self.assertNotContains(response, "Deu match!")
+        self.assertFalse(MatchEmpresa.objects.exists())
+
+    def test_candidato_que_recusa_nao_gera_match(self):
+        self.avaliar_empresa(direcao="recusar")
+        response = self.avaliar_candidato(follow=True)
+        self.assertNotContains(response, "Deu match!")
+        self.assertFalse(MatchEmpresa.objects.exists())
+
+    def test_like_da_empresa_em_vaga_tambem_gera_match(self):
+        vaga = Vaga.criar(
+            self.empresa, titulo="Desenvolvedor", descricao="Desenvolvimento",
+        )
+        self.avaliar_candidato(vaga=vaga)
+        response = self.avaliar_empresa(follow=True)
+        self.assertContains(response, "Deu match!")
+        self.assertContains(response, self.empresa.nome)
+
+    def test_migracao_reconhece_curtidas_mutuas_existentes(self):
+        SwipeEmpresa.objects.create(
+            candidato=self.candidato, empresa=self.empresa, direcao="curtir",
+        )
+        AvaliacaoCandidato.objects.create(
+            candidato=self.candidato, empresa=self.empresa, direcao="curtir",
+        )
+        migracao = import_module("core.migrations.0009_matchempresa")
+        schema_editor = SimpleNamespace(connection=connection)
+        migracao.criar_matches_existentes(apps, schema_editor)
+        migracao.criar_matches_existentes(apps, schema_editor)
+
+        self.assertEqual(MatchEmpresa.objects.count(), 1)
+        self.assertContains(self.candidato_client.get(reverse("core:home")), "Deu match!")
+        self.assertContains(self.empresa_client.get(reverse("core:home")), "Deu match!")

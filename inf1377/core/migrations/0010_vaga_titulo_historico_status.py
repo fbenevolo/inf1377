@@ -18,7 +18,7 @@ def publicar_vagas_existentes(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0007_alter_vaga_empresa_vaga_unique_vaga_por_empresa'),
+        ('core', '0009_matchempresa'),
     ]
 
     operations = [
