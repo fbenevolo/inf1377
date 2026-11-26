@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Minhas vagas | Linketinder</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; padding: 36px 24px; color: #172033; background: #f5f7fb; font: 16px Arial, sans-serif; }
+      .card { width: min(100%, 900px); margin: auto; padding: 38px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 12px 35px #17255414; }
+      .brand, a { color: #1d4ed8; text-decoration: none; }
+      .brand { font-weight: bold; }
+      .topo { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 22px 0 26px; }
+      h1 { margin: 0; color: #172554; }
+      .botao { display: inline-block; padding: 11px 16px; border: 0; border-radius: 8px; color: white; background: #1d4ed8; font: bold .95rem Arial, sans-serif; cursor: pointer; }
+      .botao:hover { background: #1e40af; }
+      .botao-sec { color: #1d4ed8; background: #eff6ff; }
+      .botao-sec:hover { background: #dbeafe; }
+      .botao-perigo { color: #b91c1c; background: #fef2f2; }
+      .botao-perigo:hover { background: #fee2e2; }
+      .mensagens { list-style: none; padding: 0; margin: 0 0 20px; }
+      .mensagens li { padding: 12px 14px; border-radius: 8px; margin-bottom: 8px; }
+      .mensagens .success { color: #166534; background: #f0fdf4; border: 1px solid #86efac; }
+      .mensagens .error { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 12px 10px; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: middle; }
+      th { color: #64748b; font-size: .85rem; text-transform: uppercase; letter-spacing: .03em; }
+      .status { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: .85rem; font-weight: bold; }
+      .status-publicada { color: #166534; background: #dcfce7; }
+      .status-pausada { color: #92400e; background: #fef3c7; }
+      .status-encerrada { color: #475569; background: #e2e8f0; }
+      .acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+      .acoes form { margin: 0; }
+      .vazio { padding: 32px; text-align: center; color: #64748b; }
+      .links { margin-top: 26px; }
+      @media (max-width: 640px) { .card { padding: 26px 16px; } .topo { flex-direction: column; align-items: flex-start; } }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <a class="brand" href="{% url 'core:home' %}">Linketinder</a>
+      <div class="topo">
+        <h1>Minhas vagas</h1>
+        <a class="botao" href="{% url 'core:vaga-nova' %}">+ Nova vaga</a>
+      </div>
+
+      {% if messages %}
+        <ul class="mensagens">
+          {% for message in messages %}<li class="{{ message.tags }}" role="status">{{ message }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if vagas %}
+        <table>
+          <thead>
+            <tr><th>Título</th><th>Modalidade</th><th>Salário</th><th>Criada em</th><th>Status</th><th>Ações</th></tr>
+          </thead>
+          <tbody>
+            {% for vaga in vagas %}
+              <tr>
+                <td><strong>{{ vaga.nome }}</strong>{% if vaga.endereco %}<br><small>{{ vaga.endereco }}</small>{% endif %}</td>
+                <td>{{ vaga.get_modalidade_display }}</td>
+                <td>{% if vaga.salario is not None %}R$ {{ vaga.salario }}{% else %}—{% endif %}</td>
+                <td>{{ vaga.data_criacao|date:"d/m/Y" }}</td>
+                <td><span class="status status-{{ vaga.status_atual }}">{{ vaga.get_status_atual_display }}</span></td>
+                <td>
+                  <div class="acoes">
+                    <a class="botao botao-sec" href="{% url 'core:vaga-editar' vaga.pk %}">Editar</a>
+                    {% if vaga.status_atual == "publicada" %}
+                      <form method="post" action="{% url 'core:vaga-status' vaga.pk %}">
+                        {% csrf_token %}
+                        <button class="botao botao-sec" type="submit" name="acao" value="pausar">Pausar</button>
+                      </form>
+                    {% elif vaga.status_atual == "pausada" %}
+                      <form method="post" action="{% url 'core:vaga-status' vaga.pk %}">
+                        {% csrf_token %}
+                        <button class="botao botao-sec" type="submit" name="acao" value="reativar">Reativar</button>
+                      </form>
+                    {% endif %}
+                    {% if vaga.status_atual != "encerrada" %}
+                      <a class="botao botao-perigo" href="{% url 'core:vaga-encerrar' vaga.pk %}">Encerrar</a>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="vazio">Sua empresa ainda não publicou vagas. Comece criando a primeira.</p>
+      {% endif %}
+
+      <div class="links">
+        <a href="{% url 'core:vagas' %}">Avaliar candidatos →</a>
+      </div>
+    </main>
+  </body>
+</html>

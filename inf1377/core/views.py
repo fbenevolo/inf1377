@@ -1,11 +1,16 @@
 from functools import wraps
 
+from django.contrib import messages
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import logout
+from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import OuterRef, Subquery
+from django.shortcuts import get_object_or_404
 from django.shortcuts import render
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 from django.views.generic.edit import FormView
 
 from .forms import (
@@ -14,9 +19,11 @@ from .forms import (
     CandidatoPerfilForm,
     EmpresaCadastroForm,
     EmpresaPerfilForm,
+    VagaForm,
 )
 from .models import (
-    AvaliacaoCandidato, Candidato, Empresa, MatchEmpresa, Swipe, SwipeEmpresa, Vaga,
+    AvaliacaoCandidato, Candidato, Empresa, HistoricoStatusVaga, MatchEmpresa,
+    Swipe, SwipeEmpresa, Vaga,
 )
 
 
@@ -177,6 +184,113 @@ def vagas(request):
             "tipo_conta": tipo_conta, "empresa": empresa,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# UC04 · Gerenciar vagas
+# ---------------------------------------------------------------------------
+
+def empresa_autenticada(view):
+    """Pré-condição do UC04: a empresa está autenticada."""
+    @wraps(view)
+    @conta_autenticada
+    def wrapper(request, *args, **kwargs):
+        if request.session.get("tipo_conta") != "empresa":
+            messages.error(request, "Apenas empresas podem gerenciar vagas.")
+            return redirect("core:home")
+        return view(request, *args, **kwargs)
+    return wrapper
+
+
+def _vagas_da_empresa(request):
+    status_mais_recente = HistoricoStatusVaga.objects.filter(
+        vaga=OuterRef("pk"),
+    ).order_by("-data_alteracao", "-pk").values("status")[:1]
+    return Vaga.objects.filter(
+        empresa_id=request.session["conta_id"],
+    ).annotate(status_anotado=Subquery(status_mais_recente))
+
+
+def _vaga_travada(request, pk):
+    """Trava a vaga da empresa logada para que duas mudanças de status não se cruzem."""
+    return get_object_or_404(
+        Vaga.objects.select_for_update(), pk=pk, empresa_id=request.session["conta_id"],
+    )
+
+
+@empresa_autenticada
+def minhas_vagas(request):
+    """Passo 1: lista as vagas da empresa com o status atual de cada uma."""
+    vagas_empresa = _vagas_da_empresa(request).order_by("-data_criacao", "nome")
+    return render(request, "core/minhas_vagas.html", {"vagas": vagas_empresa})
+
+
+@empresa_autenticada
+def vaga_nova(request):
+    """Passos 2 a 7: cria a vaga e registra o status Publicada no histórico."""
+    empresa = Empresa.objects.get(pk=request.session["conta_id"])
+    form = VagaForm(request.POST or None, empresa=empresa)
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            vaga = form.save()
+            vaga.alterar_status(HistoricoStatusVaga.Status.PUBLICADA)
+        messages.success(request, f"Vaga “{vaga.nome}” publicada.")
+        return redirect("core:minhas-vagas")
+    return render(request, "core/vaga_form.html", {"form": form, "vaga": None})
+
+
+@empresa_autenticada
+def vaga_editar(request, pk):
+    """[A1] Editar vaga: mesmo formulário, preenchido com os dados atuais."""
+    vaga = get_object_or_404(_vagas_da_empresa(request), pk=pk)
+    form = VagaForm(request.POST or None, instance=vaga, empresa=vaga.empresa)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"Vaga “{vaga.nome}” atualizada.")
+        return redirect("core:minhas-vagas")
+    return render(request, "core/vaga_form.html", {"form": form, "vaga": vaga})
+
+
+@require_POST
+@empresa_autenticada
+def vaga_alterar_status(request, pk):
+    """[A2] Pausar ou reativar vaga."""
+    acoes = {
+        "pausar": HistoricoStatusVaga.Status.PAUSADA,
+        "reativar": HistoricoStatusVaga.Status.PUBLICADA,
+    }
+    novo_status = acoes.get(request.POST.get("acao"))
+    if novo_status is None:
+        messages.error(request, "Ação inválida.")
+        return redirect("core:minhas-vagas")
+    with transaction.atomic():
+        vaga = _vaga_travada(request, pk)
+        try:
+            vaga.alterar_status(novo_status)
+        except ValidationError as erro:
+            messages.error(request, erro.messages[0])
+        else:
+            messages.success(
+                request, f"Vaga “{vaga.nome}” agora está {vaga.get_status_atual_display().lower()}.",
+            )
+    return redirect("core:minhas-vagas")
+
+
+@empresa_autenticada
+def vaga_encerrar(request, pk):
+    """[A3] Encerrar vaga: pede confirmação; os matches existentes são mantidos."""
+    vaga = get_object_or_404(_vagas_da_empresa(request), pk=pk)
+    if request.method == "POST":
+        with transaction.atomic():
+            vaga = _vaga_travada(request, pk)
+            try:
+                vaga.alterar_status(HistoricoStatusVaga.Status.ENCERRADA)
+            except ValidationError as erro:
+                messages.error(request, erro.messages[0])
+            else:
+                messages.success(request, f"Vaga “{vaga.nome}” encerrada.")
+        return redirect("core:minhas-vagas")
+    return render(request, "core/vaga_encerrar.html", {"vaga": vaga})
 
 
 def login_view(request):

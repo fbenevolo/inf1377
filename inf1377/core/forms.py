@@ -1,7 +1,33 @@
 from django import forms
 from django.contrib.auth.hashers import check_password
 
-from .models import Candidato, Empresa
+from .models import Candidato, Empresa, Vaga
+
+
+class VagaForm(forms.ModelForm):
+    """UC04: formulário de criação/edição (título, descrição, salário, modalidade, endereço)."""
+
+    class Meta:
+        model = Vaga
+        fields = ["nome", "descricao", "salario", "modalidade", "endereco", "competencias"]
+        labels = {"nome": "Título"}
+        widgets = {"competencias": forms.CheckboxSelectMultiple}
+
+    def __init__(self, *args, empresa, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.empresa = empresa
+        self.instance.empresa = empresa
+
+    def clean_nome(self):
+        # A unicidade (empresa, nome) não é validada pelo ModelForm porque
+        # "empresa" não é um campo do formulário.
+        nome = self.cleaned_data["nome"].strip()
+        repetida = Vaga.objects.filter(empresa=self.empresa, nome__iexact=nome)
+        if self.instance.pk:
+            repetida = repetida.exclude(pk=self.instance.pk)
+        if repetida.exists():
+            raise forms.ValidationError("Sua empresa já tem uma vaga com este título.")
+        return nome
 
 
 class AutenticacaoForm(forms.Form):

@@ -39,6 +39,7 @@
           {% if request.session.conta_id %}
             {% if request.session.nome_conta %}<span>Bem-vindo(a), {{ request.session.nome_conta }}!</span>{% endif %}
             <a href="{% url 'core:perfil' %}">Meu Perfil</a>
+            {% if request.session.tipo_conta == "empresa" %}<a href="{% url 'core:minhas-vagas' %}">Minhas vagas</a>{% endif %}
             <a href="{% url 'core:vagas' %}">{% if request.session.tipo_conta == "empresa" %}Avaliar candidatos{% else %}Vagas{% endif %}</a>
             <a class="nav-button" href="{% url 'core:logout' %}">Logout</a>
           {% else %}

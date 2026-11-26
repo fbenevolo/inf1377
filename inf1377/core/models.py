@@ -1,5 +1,7 @@
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 
 class Competencia(models.Model):
@@ -58,18 +60,72 @@ class Empresa(models.Model):
 
 
 class Vaga(models.Model):
+    class Modalidade(models.TextChoices):
+        REMOTO = "remoto", "Remoto"
+        HIBRIDO = "hibrido", "Híbrido"
+        PRESENCIAL = "presencial", "Presencial"
+
     empresa = models.ForeignKey(
         Empresa,
         on_delete=models.CASCADE,
         related_name="vagas",
     )
-    nome = models.CharField(max_length=150)
-    descricao = models.TextField()
+    nome = models.CharField("título", max_length=150)
+    descricao = models.TextField("descrição")
+    salario = models.DecimalField(
+        "salário",
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    modalidade = models.CharField(
+        max_length=10,
+        choices=Modalidade.choices,
+        default=Modalidade.PRESENCIAL,
+    )
+    endereco = models.CharField("endereço", max_length=255, blank=True)
+    data_criacao = models.DateTimeField(default=timezone.now, editable=False)
     competencias = models.ManyToManyField(
         Competencia,
         related_name="vagas",
         blank=True,
     )
+
+    # UC04: transições permitidas entre status (RN3: Encerrada é final).
+    TRANSICOES_STATUS = {
+        None: {"publicada"},
+        "publicada": {"pausada", "encerrada"},
+        "pausada": {"publicada", "encerrada"},
+        "encerrada": set(),
+    }
+
+    @property
+    def status_atual(self):
+        """RN2: o status atual é o registro mais recente do histórico."""
+        if hasattr(self, "status_anotado"):
+            return self.status_anotado
+        ultimo = self.historico_status.order_by("-data_alteracao", "-pk").first()
+        return ultimo.status if ultimo else None
+
+    def get_status_atual_display(self):
+        status = self.status_atual
+        return HistoricoStatusVaga.Status(status).label if status else "Sem status"
+
+    def alterar_status(self, novo_status):
+        """Registra uma mudança de status no histórico (UC04 · RN2/RN3)."""
+        atual = self.status_atual
+        if novo_status not in self.TRANSICOES_STATUS.get(atual, set()):
+            raise ValidationError(
+                f"Não é possível mudar a vaga de "
+                f"“{self.get_status_atual_display()}” para "
+                f"“{HistoricoStatusVaga.Status(novo_status).label}”."
+            )
+        registro = HistoricoStatusVaga.objects.create(vaga=self, status=novo_status)
+        # Descarta o status anotado na consulta para que a próxima leitura venha do histórico.
+        self.__dict__.pop("status_anotado", None)
+        return registro
 
     class Meta:
         ordering = ["empresa__nome", "nome"]
@@ -84,6 +140,31 @@ class Vaga(models.Model):
 
     def __str__(self):
         return f"{self.nome} - {self.empresa.nome}"
+
+
+class HistoricoStatusVaga(models.Model):
+    """Classe associativa entre Vaga e StatusVaga (diagrama de classes)."""
+
+    class Status(models.TextChoices):
+        PUBLICADA = "publicada", "Publicada"
+        PAUSADA = "pausada", "Pausada"
+        ENCERRADA = "encerrada", "Encerrada"
+
+    vaga = models.ForeignKey(
+        Vaga,
+        on_delete=models.CASCADE,
+        related_name="historico_status",
+    )
+    status = models.CharField(max_length=9, choices=Status.choices)
+    data_alteracao = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-data_alteracao", "-pk"]
+        verbose_name = "histórico de status da vaga"
+        verbose_name_plural = "históricos de status das vagas"
+
+    def __str__(self):
+        return f"{self.vaga}: {self.get_status_display()} ({self.data_alteracao:%d/%m/%Y %H:%M})"
 
 
 class Swipe(models.Model):

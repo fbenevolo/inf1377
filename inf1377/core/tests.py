@@ -427,3 +427,186 @@ class MatchEmpresaTests(TestCase):
         self.assertEqual(MatchEmpresa.objects.count(), 1)
         self.assertContains(self.candidato_client.get(reverse("core:home")), "Deu match!")
         self.assertContains(self.empresa_client.get(reverse("core:home")), "Deu match!")
+
+
+class GerenciarVagasTests(TestCase):
+    """UC04 · Gerenciar vagas."""
+
+    def setUp(self):
+        from .models import HistoricoStatusVaga
+        self.Status = HistoricoStatusVaga.Status
+        self.empresa = Empresa.objects.create(
+            nome="Acme", email="contato@acme.com", cnpj="12.345.678/0001-00",
+            pais="Brasil", senha=make_password("senha-segura"),
+        )
+        self.outra_empresa = Empresa.objects.create(
+            nome="Globex", email="rh@globex.com", cnpj="98.765.432/0001-00",
+            pais="Brasil", senha=make_password("senha-segura"),
+        )
+        self.dados_vaga = {
+            "nome": "Desenvolvedora Python",
+            "descricao": "Back-end com Django",
+            "salario": "8500.00",
+            "modalidade": "remoto",
+            "endereco": "Rio de Janeiro - RJ",
+        }
+
+    def autenticar(self, conta, tipo="empresa"):
+        session = self.client.session
+        session["conta_id"] = conta.pk
+        session["tipo_conta"] = tipo
+        session["nome_conta"] = conta.nome
+        session.save()
+
+    def criar_vaga(self, empresa=None, nome="Analista"):
+        vaga = Vaga.objects.create(
+            empresa=empresa or self.empresa, nome=nome, descricao="Descrição",
+        )
+        vaga.alterar_status(self.Status.PUBLICADA)
+        return vaga
+
+    def test_exige_login_de_empresa(self):
+        self.assertRedirects(self.client.get(reverse("core:minhas-vagas")), reverse("core:login"))
+        candidato = Candidato.objects.create(
+            nome="Ana", email="ana@example.com", cpf="12345678900", idade=28,
+            estado="RJ", cep="20000000", senha=make_password("senha-segura"),
+        )
+        self.autenticar(candidato, "candidato")
+        self.assertRedirects(self.client.get(reverse("core:minhas-vagas")), reverse("core:home"))
+
+    def test_cria_vaga_publicada_com_historico(self):
+        self.autenticar(self.empresa)
+        response = self.client.post(reverse("core:vaga-nova"), self.dados_vaga)
+        self.assertRedirects(response, reverse("core:minhas-vagas"))
+
+        vaga = Vaga.objects.get(nome="Desenvolvedora Python")
+        self.assertEqual(vaga.empresa, self.empresa)
+        self.assertEqual(vaga.modalidade, Vaga.Modalidade.REMOTO)
+        self.assertEqual(str(vaga.salario), "8500.00")
+        self.assertIsNotNone(vaga.data_criacao)
+        self.assertEqual(vaga.status_atual, self.Status.PUBLICADA)
+        self.assertEqual(vaga.historico_status.count(), 1)
+
+        lista = self.client.get(reverse("core:minhas-vagas"))
+        self.assertContains(lista, "Desenvolvedora Python")
+        self.assertContains(lista, "Publicada")
+
+    def test_rejeita_dados_obrigatorios_ausentes(self):
+        self.autenticar(self.empresa)
+        response = self.client.post(reverse("core:vaga-nova"), {"modalidade": "remoto"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Vaga.objects.exists())
+        self.assertTrue(response.context["form"].errors["nome"])
+        self.assertTrue(response.context["form"].errors["descricao"])
+
+    def test_rejeita_salario_negativo(self):
+        self.autenticar(self.empresa)
+        response = self.client.post(reverse("core:vaga-nova"), {**self.dados_vaga, "salario": "-1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Vaga.objects.exists())
+
+    def test_rejeita_titulo_repetido_na_mesma_empresa(self):
+        self.criar_vaga(nome="Desenvolvedora Python")
+        self.autenticar(self.empresa)
+        response = self.client.post(reverse("core:vaga-nova"), self.dados_vaga)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "já tem uma vaga com este título")
+        self.assertEqual(Vaga.objects.count(), 1)
+
+    def test_lista_apenas_vagas_da_propria_empresa(self):
+        self.criar_vaga(nome="Vaga da Acme")
+        self.criar_vaga(empresa=self.outra_empresa, nome="Vaga da Globex")
+        self.autenticar(self.empresa)
+        response = self.client.get(reverse("core:minhas-vagas"))
+        self.assertContains(response, "Vaga da Acme")
+        self.assertNotContains(response, "Vaga da Globex")
+
+    def test_edita_vaga(self):
+        vaga = self.criar_vaga()
+        self.autenticar(self.empresa)
+        response = self.client.post(
+            reverse("core:vaga-editar", args=[vaga.pk]),
+            {**self.dados_vaga, "nome": "Analista Sênior"},
+        )
+        self.assertRedirects(response, reverse("core:minhas-vagas"))
+        vaga.refresh_from_db()
+        self.assertEqual(vaga.nome, "Analista Sênior")
+        self.assertEqual(vaga.status_atual, self.Status.PUBLICADA)
+
+    def test_nao_edita_vaga_de_outra_empresa(self):
+        vaga = self.criar_vaga(empresa=self.outra_empresa)
+        self.autenticar(self.empresa)
+        response = self.client.post(reverse("core:vaga-editar", args=[vaga.pk]), self.dados_vaga)
+        self.assertEqual(response.status_code, 404)
+
+    def test_pausa_e_reativa_registrando_historico(self):
+        vaga = self.criar_vaga()
+        self.autenticar(self.empresa)
+        url = reverse("core:vaga-status", args=[vaga.pk])
+
+        self.client.post(url, {"acao": "pausar"})
+        self.assertEqual(vaga.status_atual, self.Status.PAUSADA)
+
+        self.client.post(url, {"acao": "reativar"})
+        self.assertEqual(vaga.status_atual, self.Status.PUBLICADA)
+
+        self.assertEqual(
+            list(vaga.historico_status.order_by("data_alteracao", "pk").values_list("status", flat=True)),
+            ["publicada", "pausada", "publicada"],
+        )
+
+    def test_alterar_status_exige_post(self):
+        vaga = self.criar_vaga()
+        self.autenticar(self.empresa)
+        response = self.client.get(reverse("core:vaga-status", args=[vaga.pk]))
+        self.assertEqual(response.status_code, 405)
+
+    def test_encerrar_pede_confirmacao(self):
+        vaga = self.criar_vaga()
+        self.autenticar(self.empresa)
+        response = self.client.get(reverse("core:vaga-encerrar", args=[vaga.pk]))
+        self.assertContains(response, "não poderá ser reativada")
+        self.assertEqual(vaga.status_atual, self.Status.PUBLICADA)
+
+    def test_encerra_vaga_e_mantem_matches(self):
+        from .models import Match
+        vaga = self.criar_vaga()
+        candidato = Candidato.objects.create(
+            nome="Ana", email="ana@example.com", cpf="12345678900", idade=28,
+            estado="RJ", cep="20000000", senha=make_password("senha-segura"),
+        )
+        Match.objects.create(candidato=candidato, vaga=vaga)
+        self.autenticar(self.empresa)
+
+        response = self.client.post(reverse("core:vaga-encerrar", args=[vaga.pk]))
+        self.assertRedirects(response, reverse("core:minhas-vagas"))
+        self.assertEqual(vaga.status_atual, self.Status.ENCERRADA)
+        self.assertTrue(Match.objects.filter(vaga=vaga).exists())
+
+    def test_vaga_encerrada_nao_pode_ser_reativada(self):
+        vaga = self.criar_vaga()
+        vaga.alterar_status(self.Status.ENCERRADA)
+        self.autenticar(self.empresa)
+
+        response = self.client.post(
+            reverse("core:vaga-status", args=[vaga.pk]), {"acao": "reativar"}, follow=True,
+        )
+        self.assertContains(response, "Não é possível mudar a vaga")
+        self.assertEqual(Vaga.objects.get(pk=vaga.pk).status_atual, self.Status.ENCERRADA)
+
+    def test_nao_pausa_vaga_ja_pausada(self):
+        from django.core.exceptions import ValidationError
+        vaga = self.criar_vaga()
+        vaga.alterar_status(self.Status.PAUSADA)
+        with self.assertRaises(ValidationError):
+            vaga.alterar_status(self.Status.PAUSADA)
+
+    def test_migracao_publica_vagas_existentes(self):
+        migracao = import_module("core.migrations.0010_vaga_gerenciamento_historicostatusvaga")
+        vaga = Vaga.objects.create(empresa=self.empresa, nome="Antiga", descricao="Sem histórico")
+        self.assertIsNone(vaga.status_atual)
+
+        schema_editor = SimpleNamespace(connection=connection)
+        migracao.publicar_vagas_existentes(apps, schema_editor)
+
+        self.assertEqual(vaga.status_atual, self.Status.PUBLICADA)
